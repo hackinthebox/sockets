@@ -1,20 +1,19 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <sys/wait.h>
-#include <signal.h>
+#include <stdio.h> // standard c input output functions
+#include <stdlib.h> // exit  
+#include <unistd.h> // close and fork functions , NULL pointer 
+#include <errno.h> // perror handling 
+#include <string.h> // string functions 
+#include <netdb.h> // addrinfo types 
+#include <sys/socket.h> // sockaddr structure
+#include <arpa/inet.h> // inet_ntop ( converting client address to string )
+#include <sys/wait.h> // waitpid constants ( WNOHANG ) 
+#include <signal.h> // signal handling 
 
-#define PORT 5050
+#define PORT "5050"
 
 #define BACKLOG 10 
 
+// Function for reaping zombie processes
 void sigchld_handler(int s) { 
 	// save errno in case of overwrite
 	int saved_errno = errno;
@@ -25,13 +24,23 @@ void sigchld_handler(int s) {
 	errno = saved_errno;
 }
 
+
+// Function for reading the client's address 
+void *get_in_addr(struct sockaddr *sa) { 
+	if (sa->sa_family == AF_INET) { 
+		return &(((struct sockaddr_in*)sa)->sin_addr);
+	}
+	return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
+
+
 int socky() { 
 	
 	// Define desired socket type
-	struct addrinfo hints
+	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
-	hints.socktype = SOCK_STREAM;
+	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE; // Wildcard IP Address
 	hints.ai_protocol = 0; // Any protocol
 
@@ -90,7 +99,60 @@ int socky() {
 		exit(1);
 	}
 	
-	// Create a signal handler for children
+	// Create a signal handler for child procs
+	// create a structure of type sigaction, this will hold a pointer to the handler function and behaviour flags
+	struct sigaction sa;
+	sa.sa_handler = sigchld_handler; // set the handler function , that will reap dead procs
+	sigemptyset(&sa.sa_mask);
+	// Specify the behaviour flags to use with the signal handler 
+	// SA_RESTART - 
+	sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+	// sigaction function is used to examine and change the signal action
+	// we specify the SIGCHLD signal and the sigaction structure with our defined handler function
+	if (sigaction(SIGCHLD, &sa, NULL) == -1) { 
+		perror("sigaction");
+		exit(1);
+	}
 	
+	printf("server: waiting for connections...\n");
+	
+	// loop to accept incomming connections
+	// accept on the socket descriptor, specify a struct for the client's address and sizeof address
+	
+	// new socket descriptor for holding client socket information
+	int new_fd, sin_size;
+	// sockaddr struct 
+	struct sockaddr their_addr;
+	char s[INET6_ADDRSTRLEN];
+	while(1) { // main accept() loop, forks children to handle data 
+		sin_size = sizeof their_addr;
+		// accept their_addr will hold the client information if we don't want this data these could be set to NULL
+		// new_fd will hold the socket descriptor associated with the client
+		// the original sockfd is not assocaited with the socket and is available for new connections
+		new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
+		if (new_fd == -1) {
+			perror("accept");
+			continue;
+		}
+	
+	// inet_ntop will convert a binary IPv4/6 address to text.
+	// the char buffer s will hold the text string of the client address, this is then printed.
+	inet_ntop(their_addr.sa_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof(s));
+	printf("server: got connection from %s\n", s);
 
+	if (!fork()) { // this is the child process ( same as : if (fork() == 0 )
+		close(sockfd);
+		if (send(new_fd, "Hello, world!\n", 15, 0) == -1){
+			perror("send");
+		}
+		close(new_fd);
+		exit(0);
+	}
+	close(new_fd); // parent doesn't need the socket descriptor
+	}
+	return 0;
+}		
+
+int main() { 
+	socky();
 }
