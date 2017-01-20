@@ -9,8 +9,10 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#define MAXDATASIZE 100
+#define MAXDATASIZE 128
 #define MAXADDRSIZE 50
+#define SAVEDFILE "saved_file.txt"
+#define TRUE 1
 
 // function to get sockaddr ( whether IPv4 or 6 ) 
 void *get_in_addr(struct sockaddr *sa) {
@@ -59,21 +61,28 @@ int socky(char *a, const char *port_num) {
 	}else{
 	char s[INET6_ADDRSTRLEN];
 	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr), s, sizeof(s));
-	printf("client: connecting to %s\n", s);
+	printf("[CLIENT] connecting to %s\n", s);
 	return(sockfd);
 	}
 }
 
-// Function to recieve data from the socket up to max data size
-int get_data(int sockfd, char *buf){
-	int numbytes;
-	if (( numbytes = recv(sockfd, buf, (MAXDATASIZE-1), 0)) == -1) {
-		perror("recv");
-		exit(1);
+int receive_data(int sockfd, FILE *fp) {
+	int size_recv, total_size=0;
+	char buf[MAXDATASIZE];
+	while (TRUE) {
+	size_recv = recv(sockfd, buf, sizeof(buf), 0);
+        if ((size_recv == -1)) {
+                perror("recv");
+                exit(1);
+        } else if ((size_recv == 0)) {
+		break;
 	}
-	buf[numbytes]= '\0';
-	return numbytes;
+		fwrite(buf, 1, size_recv, fp);
+		total_size = total_size + size_recv;
+	}
+	return total_size;
 }
+
 
 int main(int argc, char **argv) {
 	if (argc != 3) {
@@ -82,10 +91,13 @@ int main(int argc, char **argv) {
 	}
 	// open socket and connect to the server
 	int sockfd = socky(argv[1],argv[2]);
-	char buf[MAXDATASIZE];
-	int bytes_recv = get_data(sockfd, buf);
-	
-	printf("client: recieved '%s'\n",buf);
+	int bytes_recv;
+	FILE *fp;
+	fp = fopen( SAVEDFILE, "w" );
+	bytes_recv = receive_data(sockfd, fp);
+	fclose(fp);
+
+	printf("[CLIENT] received %d bytes written to %s \n",bytes_recv,SAVEDFILE);
 	
 	close(sockfd);
 	

@@ -10,8 +10,10 @@
 #include <signal.h> // signal handling 
 
 #define PORT "5050"
-
+#define MAXFILESIZE 1024
+#define MAXPAYLOADSIZE 128
 #define BACKLOG 10 
+#define INPUTFILE "file.txt"
 
 // Function for reaping zombie processes
 void *sigchld_handler() {
@@ -114,7 +116,7 @@ int socky(const char *portnum) {
 
 // handle connections  
 	
-int handle_connections(int sockfd, int port_num) {
+int handle_connections(int sockfd, int port_num, FILE *fp) {
 
 	// listen for connections , limit of queued connections is backlog number
 	if (listen(sockfd, BACKLOG) == -1) {
@@ -122,7 +124,7 @@ int handle_connections(int sockfd, int port_num) {
 		exit(1);
 	}
 
-	printf("server: waiting for connections on port [%d]...\n", port_num);
+	printf("[SERVER] waiting for connections on port [%d]...\n", port_num);
 	
 	// loop to accept incomming connections
 	// accept on the socket descriptor, specify a struct for the client's address and sizeof address
@@ -146,39 +148,71 @@ int handle_connections(int sockfd, int port_num) {
 	// inet_ntop will convert a binary IPv4/6 address to text.
 	// the char buffer s will hold the text string of the client address, this is then printed.
 	inet_ntop(their_addr.sa_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof(s));
-	printf("server: got connection from %s\n", s);
-
+	printf("[SERVER] got connection from %s\n", s);
+	
+	//get file size
+	fseek(fp, 0, SEEK_END);
+	int sz = ftell(fp);
+	// reset file pointer
+	fseek(fp, 0, SEEK_SET);
+	if (sz > MAXFILESIZE){
+		printf("[SERVER] Input file is too large: %d bytes\n Maximum allowed is: %d bytes\n",sz,MAXFILESIZE);
+	}
+	//set the payload buffer 
+	char buf[MAXPAYLOADSIZE];
+	int tosend = sz, payload, count;
 	if (!fork()) { // this is the child process ( same as : if (fork() == 0 )
 		close(sockfd);
-		if (send(new_fd, "Hello, world!", 13, 0) == -1){
-			perror("send");
+		while ( tosend > 0 ) {
+			if ( tosend > MAXPAYLOADSIZE ) {
+				payload = MAXPAYLOADSIZE;
+			} else {
+				payload = tosend;
+			}
+			fread(buf,payload,1,fp);
+			if (send(new_fd, buf, payload, 0) == -1) {
+				perror("send");
+			}
+			count ++;
+			tosend = tosend - payload;
 		}
 		close(new_fd);
+		printf("[SERVER] child process %d has sent %d bytes in %d packets to %s\n",getpid(), sz, count, s);
 		exit(0);
 	}
 	close(new_fd); // parent doesn't need the socket descriptor
 	}
 	return 0;
-}		
+}	
 
 int main(int argc, char **argv) { 
 	// create and bind the socket to the port number
 	// if no port number specified use default 5050
 	int socket_num, port_num;
-	if (argc > 1 ) {
+	FILE *fp;
+	if (argc > 2 ) {
 		socket_num = socky(argv[1]);
 		port_num = atoi(argv[1]);
-	} else if ( argc > 2 ) { 
-		fprintf(stderr,"Usage: server <portnum>");
+		if ((fp = fopen(argv[2],"r")) == NULL ) {
+			perror("fopen");
+			exit(1);
+		}			
+	} else if (( argc > 3 ) | ( argc == 1 )) { 
+		fprintf(stderr,"Usage: server <portnum> <filename>\n");
+		exit(1);
 	} else {
 		socket_num = socky(PORT);
 		port_num = atoi(PORT);
+		if ((fp = fopen(INPUTFILE,"r")) == NULL ) { 
+			perror("fopen");
+			exit(1);
+		}
 	}
-	
-	// call signal handler for cleaning up zombies
-	
+	// call signal handler for cleaning up zombies	
 	handle_children(sigchld_handler);
-
-	handle_connections(socket_num,port_num);
-
+	// Open the input file 
+	// Handle the inbound connections
+	handle_connections(socket_num,port_num,fp);
+	// Close the file
+	fclose(fp);
 }

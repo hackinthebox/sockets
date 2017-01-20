@@ -1,0 +1,9 @@
+# Sockets Challenge
+
+[Stage 1]
+Create a server and client. The server will send a file in multiple payloads to the client on connection.
+
+[Stage 2]
+Use ncurses to make the client program interactive. 
+Add a RPC function to the server, that will list the files in a files sub-directory. 
+The client can select a file to download from this list.
