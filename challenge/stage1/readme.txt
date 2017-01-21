@@ -1,3 +1,5 @@
-To Do: 
+:: File Download Example :: 
 
-Restructure server child process loop , move file operations outside of the child process context.
+Using a send & receive loop to accomodate small packet size to send/receive a file in multiple packets.
+
+

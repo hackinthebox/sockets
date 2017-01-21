@@ -134,6 +134,15 @@ int handle_connections(int sockfd, int port_num, FILE *fp) {
 	// sockaddr struct 
 	struct sockaddr their_addr;
 	char s[INET6_ADDRSTRLEN];
+	//get file size
+        fseek(fp, 0, SEEK_END);
+        int sz = ftell(fp);
+        // reset file pointer
+        fseek(fp, 0, SEEK_SET);
+        if (sz > MAXFILESIZE){
+                printf("[SERVER] Input file is too large: %d bytes\n Maximum allowed is: %d bytes\n",sz,MAXFILESIZE);
+        }
+
 	while(1) { // main accept() loop, forks children to handle data 
 		sin_size = sizeof their_addr;
 		// accept their_addr will hold the client information if we don't want this data these could be set to NULL
@@ -148,20 +157,10 @@ int handle_connections(int sockfd, int port_num, FILE *fp) {
 	// inet_ntop will convert a binary IPv4/6 address to text.
 	// the char buffer s will hold the text string of the client address, this is then printed.
 	inet_ntop(their_addr.sa_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof(s));
-	printf("[SERVER] got connection from %s\n", s);
-	
-	//get file size
-	fseek(fp, 0, SEEK_END);
-	int sz = ftell(fp);
-	// reset file pointer
-	fseek(fp, 0, SEEK_SET);
-	if (sz > MAXFILESIZE){
-		printf("[SERVER] Input file is too large: %d bytes\n Maximum allowed is: %d bytes\n",sz,MAXFILESIZE);
-	}
-	//set the payload buffer 
-	char buf[MAXPAYLOADSIZE];
-	int tosend = sz, payload, count;
+	printf("[SERVER] got connection from %s\n", s);	
 	if (!fork()) { // this is the child process ( same as : if (fork() == 0 )
+		int tosend = sz, payload, count;
+		char buf[MAXPAYLOADSIZE];
 		close(sockfd);
 		while ( tosend > 0 ) {
 			if ( tosend > MAXPAYLOADSIZE ) {
@@ -175,11 +174,11 @@ int handle_connections(int sockfd, int port_num, FILE *fp) {
 			}
 			count ++;
 			tosend = tosend - payload;
-		}
+			}
 		close(new_fd);
 		printf("[SERVER] child process %d has sent %d bytes in %d packets to %s\n",getpid(), sz, count, s);
 		exit(0);
-	}
+		}
 	close(new_fd); // parent doesn't need the socket descriptor
 	}
 	return 0;
